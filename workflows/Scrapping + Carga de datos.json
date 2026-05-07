@@ -1,0 +1,273 @@
+{
+  "name": "Scrapping + Carga de datos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b2255db7-07b2-47e7-8a9c-086208c69765",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://agenda.eltucumano.com/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "4d8feb84-b84f-4e8d-9be6-3f61da6621a7",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "nombre",
+              "cssSelector": "h1.entry-title",
+              "returnArray": true
+            },
+            {
+              "key": "lugar",
+              "cssSelector": ".caja-lugar",
+              "returnArray": true
+            },
+            {
+              "key": "fecha_cruda",
+              "cssSelector": ".fecha-caja",
+              "returnArray": true
+            },
+            {
+              "key": "categoria",
+              "cssSelector": ".caja-categoria",
+              "returnArray": true
+            },
+            {
+              "key": "hora",
+              "cssSelector": ".caja-hora",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "0173a0ac-d8f3-4e2a-9d6d-c0a6770d0874",
+      "name": "HTML"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rawData = $input.first().json;\n\nconst totalEventos = rawData.nombre?.length || 0;\nconst results = [];\n\nfor (let i = 0; i < totalEventos; i++) {\n\n  const nombre = rawData.nombre[i]?.trim() || \"Sin nombre\";\n  const lugar = rawData.lugar?.[i]?.trim() || \"Tucumán\";\n  const categoria = rawData.categoria?.[i]?.trim() || \"General\";\n  const hora = rawData.hora?.[i]?.trim() || \"A confirmar\";\n  \n  // Limpio la fecha que viene con saltos de línea (\\n) según se ve en la captura\n  const fechaCruda = rawData.fecha_cruda?.[i] || \"\";\n  const fechaLimpia = fechaCruda.replace(/\\s+/g, ' ').trim();\n\n  // Genero un fingerprint para evitar duplicados\n  const fingerprint = `${nombre}-${lugar}-${fechaLimpia}`\n    .toLowerCase()\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\") // Quitamos acentos\n    .replace(/[^a-z0-9]/g, '-');\n\n  results.push({\n    json: {\n      nombre,\n      lugar,\n      categoria,\n      hora,\n      fecha_evento: fechaLimpia,\n      fingerprint,\n      fecha_obtencion: new Date().toISOString(),\n      fuente: \"Agenda Tucumán\"\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "c5599ca6-617c-4ba8-ad63-4204b8af4bb1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        768,
+        208
+      ],
+      "id": "853cdbfe-864b-4a6a-b45e-a30af3988b0c",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "VndGK30GH4BpkLiE",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ojkyodzenrofudofylum.supabase.co/rest/v1/eventos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "{\n  \"on_conflict\": \"fingerprint\"\n}",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\n  \"apikey\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qa3lvZHplbnJvZnVkb2Z5bHVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMTExMDMsImV4cCI6MjA5MzU4NzEwM30.JaAXASlhT06ZP8XvPyneSrAGZTi7heyfA2hkqwSEVE8\",\n  \"Authorization\": \"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qa3lvZHplbnJvZnVkb2Z5bHVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwMTExMDMsImV4cCI6MjA5MzU4NzEwM30.JaAXASlhT06ZP8XvPyneSrAGZTi7heyfA2hkqwSEVE8\",\n  \"Content-Type\": \"application/json\",\n  \"Prefer\": \"resolution=merge-duplicates,return=representation\"\n}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"nombre\": \"{{ $json.nombre }}\",\n  \"lugar\": \"{{ $json.lugar }}\",\n  \"categoria\": \"{{ $json.categoria}}\",\n  \"fecha_evento\": \"{{ $json.fecha_evento }}\",\n  \"fuente\": \"{{ $json.fuente }}\",\n  \"fingerprint\": \"{{ $json.fingerprint }}\",\n  \"descripcion\": \"{{ $json.descripcion }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "40b4cc11-ee51-4ec2-b7ac-c8ed043a24d9",
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "1yKVAVzegZ7moqGL",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function slugify(str = \"\") {\n  return str\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\") // quitar tildes\n    .toLowerCase()\n    .trim()\n    .replace(/[^a-z0-9]+/g, \"-\")\n    .replace(/^-+|-+$/g, \"\");\n}\n\n// 👉 parsea \"May 05 14:00\" → \"2026-05-05T14:00:00Z\"\nfunction parseFecha(fechaStr = \"\") {\n  const meses = {\n    Jan: \"01\", Feb: \"02\", Mar: \"03\", Apr: \"04\",\n    May: \"05\", Jun: \"06\", Jul: \"07\", Aug: \"08\",\n    Sep: \"09\", Oct: \"10\", Nov: \"11\", Dec: \"12\"\n  };\n\n  try {\n    const parts = fechaStr.split(\" \"); // [\"May\", \"05\", \"14:00\"]\n    const mes = meses[parts[0]];\n    const dia = parts[1]?.padStart(2, \"0\");\n    const hora = parts[2] || \"00:00\";\n\n    if (!mes || !dia) return null;\n\n    return `2026-${mes}-${dia}T${hora}:00Z`;\n  } catch {\n    return null;\n  }\n}\n\nreturn items.flatMap(item => {\n  try {\n    // 1. tomar el string del LLM\n    let raw = item.json.text;\n\n    // 2. parsear JSON string → objeto\n    const parsed = JSON.parse(raw);\n\n    // 3. mapear y generar fingerprint + fecha parseada\n    return parsed.map(event => {\n      const nombre = event.nombre_limpio || \"\";\n      const lugar = event.lugar || \"\";\n      const fechaRaw = event.fecha_hora || \"\";\n\n      const fechaISO = parseFecha(fechaRaw); \n\nconst soloFecha = fechaISO ? fechaISO.split('T')[0] : \"sin-fecha\";\n\n\nconst fingerprint = `${slugify(nombre)}-${slugify(lugar)}-${soloFecha}`;\n      return {\n        json: {\n          nombre,\n          lugar,\n          categoria: event.categoria|| null,\n          descripcion: event.descripcion || null,\n          fecha_evento: fechaISO, // ✅ ahora timestamp válido\n          fingerprint,\n          fuente: \"Agenda Tucumán\"\n        }\n      };\n    });\n\n  } catch (e) {\n    return [{\n      json: {\n        error: \"parse_error\",\n        raw: item.json.text\n      }\n    }];\n  }\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "9c586fca-9604-4074-b7fb-dea36ca2c443",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Actúa como un procesador estricto de JSON.\n\nTu salida DEBE ser un array JSON válido, no string.\n\nReglas obligatorias:\n\n1. Fidelidad:\nUsá exactamente los nombres originales. No inventes eventos.\n\n2. Deduplicación:\nSi hay eventos repetidos (mismo nombre, lugar y fecha), dejá solo uno.\n\n3. Descripción:\nMáximo 150 caracteres.\n- Bandas conocidas: mencioná su relevancia\n- Teatro en \"La Sodería\" o \"Teatro Alberdi\": tono cultural\n\n4. Categorías permitidas (usar SOLO estas):\nGASTRONOMIA, CULTURA, NOCTURNO\n\n5. Formato estricto:\n- NO markdown\n- NO ```json\n- NO texto adicional\n- NO string JSON\n- devolver directamente un array JSON\n\nEjemplo válido:\n[\n  {\n    \"nombre_limpio\": \"Ejemplo\",\n    \"categoria\": \"CULTURA\",\n    \"descripcion\": \"Descripción breve\",\n    \"lugar\": \"Lugar\",\n    \"fecha_hora\": \"May 05 20:00\"\n  }\n]\n\nDatos:\n{{ JSON.stringify($input.all()) }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        832,
+        0
+      ],
+      "id": "c290c10d-ac40-463c-a551-ddfccd6f2980",
+      "name": "Basic LLM Chain",
+      "executeOnce": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        []
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a66c02b3-3826-487c-bb8c-7888f8cd00bb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b550d17e7c2ae64fb12d6e043e08589a13cc9f0a506383eeded7c1f0b6f51a27"
+  },
+  "id": "fnvQ93U7U1vCBZnP",
+  "tags": []
+}
